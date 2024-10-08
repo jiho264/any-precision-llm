@@ -9,10 +9,15 @@ import flash1dkmeans
 
 
 @numba.njit(cache=True)
-def _upscale_group(orig_centroids,
-                   orig_cluster_borders, weights,
-                   weighted_X_prefix_sum, sample_weight_prefix_sum,
-                   seed_bit, parent_bit):
+def _upscale_group(
+    orig_centroids,
+    orig_cluster_borders,
+    weights,
+    weighted_X_prefix_sum,
+    sample_weight_prefix_sum,
+    seed_bit,
+    parent_bit,
+):
     """WARNING: labels, weights and sample_weight should be sorted by weights in ascending order"""
     luts_by_bit = [orig_centroids]
 
@@ -20,27 +25,40 @@ def _upscale_group(orig_centroids,
 
     # Run the upscale
     for i in range(seed_bit, parent_bit):
-        centroids, cluster_borders = _increment_group(luts_by_bit[-1], cluster_borders, weights,
-                                                      weighted_X_prefix_sum,
-                                                      sample_weight_prefix_sum, i)
+        centroids, cluster_borders = _increment_group(
+            luts_by_bit[-1],
+            cluster_borders,
+            weights,
+            weighted_X_prefix_sum,
+            sample_weight_prefix_sum,
+            i,
+        )
         luts_by_bit.append(centroids)
 
     return luts_by_bit, cluster_borders
 
 
 @numba.njit(cache=True)
-def _increment_group(orig_centroids, cluster_borders, weights, weighted_X_prefix_sum,
-                     sample_weight_prefix_sum,
-                     seed_bit):
+def _increment_group(
+    orig_centroids,
+    cluster_borders,
+    weights,
+    weighted_X_prefix_sum,
+    sample_weight_prefix_sum,
+    seed_bit,
+):
     """WARNING: labels, weights and sample_weight should be sorted by weights in ascending order"""
     new_centroids = np.empty(2 ** (seed_bit + 1), dtype=np.float32)
     new_cluster_borders = np.empty(2 ** (seed_bit + 1) + 1, dtype=np.int32)
 
-    assert len(orig_centroids) == 2 ** seed_bit, "The number of centroids should be 2^seed_bit"
-    assert len(cluster_borders) == 2 ** seed_bit + 1, \
-        "The number of cluster start indices should be 2^seed_bit + 1"
+    assert (
+        len(orig_centroids) == 2**seed_bit
+    ), "The number of centroids should be 2^seed_bit"
+    assert (
+        len(cluster_borders) == 2**seed_bit + 1
+    ), "The number of cluster start indices should be 2^seed_bit + 1"
 
-    for c in range(2 ** seed_bit):
+    for c in range(2**seed_bit):
         start_idx = cluster_borders[c]
         stop_idx = cluster_borders[c + 1]
 
@@ -53,12 +71,14 @@ def _increment_group(orig_centroids, cluster_borders, weights, weighted_X_prefix
             new_cluster_borders[c * 2 + 1] = start_idx
             continue
 
-        cluster_centers, local_cluster_borders = flash1dkmeans.numba_kmeans_1d_two_cluster(
-            sorted_X=weights,
-            weights_prefix_sum=sample_weight_prefix_sum,
-            weighted_X_prefix_sum=weighted_X_prefix_sum,
-            start_idx=start_idx,
-            stop_idx=stop_idx
+        cluster_centers, local_cluster_borders = (
+            flash1dkmeans.numba_kmeans_1d_two_cluster(
+                sorted_X=weights,
+                weights_prefix_sum=sample_weight_prefix_sum,
+                weighted_X_prefix_sum=weighted_X_prefix_sum,
+                start_idx=start_idx,
+                stop_idx=stop_idx,
+            )
         )
 
         # local_cluster_borders is [start_idx, division_point, stop_idx]
@@ -69,13 +89,17 @@ def _increment_group(orig_centroids, cluster_borders, weights, weighted_X_prefix
         new_cluster_borders[c * 2] = start_idx
         new_cluster_borders[c * 2 + 1] = local_cluster_borders[1]
 
-    new_cluster_borders[-1] = cluster_borders[-1]  # the final border must be set manually
+    new_cluster_borders[-1] = cluster_borders[
+        -1
+    ]  # the final border must be set manually
 
     return new_centroids, new_cluster_borders
 
 
 @numba.njit(parallel=True, cache=True)
-def _seed_and_upscale_layer(layer_gradients, layer_modules, seed_bit, parent_bit, group_count, random_state=None):
+def _seed_and_upscale_layer(
+    layer_gradients, layer_modules, seed_bit, parent_bit, group_count, random_state=None
+):
     # The shape of LUTs are different for each module and bit.
     # The logical thing to do would be to use a list of lists(for each bit-width) of numpy arrays(for each module).
     # However as numba doesn't like nested python lists, we will use a list of numpy arrays instead,
@@ -83,7 +107,7 @@ def _seed_and_upscale_layer(layer_gradients, layer_modules, seed_bit, parent_bit
     lut_by_bit_by_module = []
     parent_weights_by_modules = []
 
-    n_cluster = 2 ** seed_bit
+    n_cluster = 2**seed_bit
 
     for m_idx in range(len(layer_modules)):
         module_gradient = layer_gradients[m_idx]
@@ -92,14 +116,19 @@ def _seed_and_upscale_layer(layer_gradients, layer_modules, seed_bit, parent_bit
         row_count = module_weight.shape[0]
         group_size = module_weight.shape[1] // group_count
 
-        assert group_size * group_count == module_weight.shape[1], \
-            f"Group count {group_count} does not divide the number of columns {module_weight.shape[1]}"
+        assert (
+            group_size * group_count == module_weight.shape[1]
+        ), f"Group count {group_count} does not divide the number of columns {module_weight.shape[1]}"
 
-        parent_weights = np.empty((row_count, group_count, group_size), dtype=np.float32)
+        parent_weights = np.empty(
+            (row_count, group_count, group_size), dtype=np.float32
+        )
 
         lut_by_bit = []
         for bit in range(seed_bit, parent_bit + 1):
-            lut_by_bit.append(np.empty((row_count, group_count, 2 ** bit), dtype=np.float32))
+            lut_by_bit.append(
+                np.empty((row_count, group_count, 2**bit), dtype=np.float32)
+            )
 
         for r_idx in numba.prange(module_weight.shape[0]):
             for g_idx in range(group_count):
@@ -127,16 +156,22 @@ def _seed_and_upscale_layer(layer_gradients, layer_modules, seed_bit, parent_bit
 
                 if sorted_weights_prefix_sum[-1] == 0:
                     # If the sum of the sample weights is zero, we act as if the sample weights are all 1
-                    sorted_weights_prefix_sum = np.arange(1, len(sorted_weights_fp64) + 1, dtype=np.float64)
+                    sorted_weights_prefix_sum = np.arange(
+                        1, len(sorted_weights_fp64) + 1, dtype=np.float64
+                    )
                     sorted_weighted_X_prefix_sum = np.cumsum(sorted_X_fp64)
-                    sorted_weighted_X_squared_prefix_sum = np.cumsum(sorted_X_fp64 ** 2)
+                    sorted_weighted_X_squared_prefix_sum = np.cumsum(sorted_X_fp64**2)
                 else:
                     # Else we proceed with the normal prefix sum calculations
                     sorted_weighted_X_fp64 = sorted_X_fp64 * sorted_weights_fp64
-                    sorted_weighted_X_squared_fp64 = sorted_weighted_X_fp64 * sorted_X_fp64
+                    sorted_weighted_X_squared_fp64 = (
+                        sorted_weighted_X_fp64 * sorted_X_fp64
+                    )
 
                     sorted_weighted_X_prefix_sum = np.cumsum(sorted_weighted_X_fp64)
-                    sorted_weighted_X_squared_prefix_sum = np.cumsum(sorted_weighted_X_squared_fp64)
+                    sorted_weighted_X_squared_prefix_sum = np.cumsum(
+                        sorted_weighted_X_squared_fp64
+                    )
 
                 # ---------------- Seed ----------------
 
@@ -160,9 +195,14 @@ def _seed_and_upscale_layer(layer_gradients, layer_modules, seed_bit, parent_bit
 
                 # Upscale the seed weights
                 lut_per_bit, parent_cluster_borders = _upscale_group(
-                    centroids, cluster_borders, sorted_X,
-                    sorted_weighted_X_prefix_sum, sorted_weights_prefix_sum,
-                    seed_bit, parent_bit)
+                    centroids,
+                    cluster_borders,
+                    sorted_X,
+                    sorted_weighted_X_prefix_sum,
+                    sorted_weights_prefix_sum,
+                    seed_bit,
+                    parent_bit,
+                )
 
                 # ---------------- Postprocessing ----------------
 
@@ -172,8 +212,10 @@ def _seed_and_upscale_layer(layer_gradients, layer_modules, seed_bit, parent_bit
 
                 # Convert cluster_borders back to labels
                 labels = np.empty(group_size, dtype=np.uint8)
-                for i in range(2 ** parent_bit):
-                    labels[parent_cluster_borders[i]:parent_cluster_borders[i + 1]] = i
+                for i in range(2**parent_bit):
+                    labels[
+                        parent_cluster_borders[i] : parent_cluster_borders[i + 1]
+                    ] = i
 
                 # Unsort the labels
                 labels = labels[np.argsort(sorted_indices)]
@@ -191,15 +233,27 @@ def _get_layer_loader(analyzer, gradients):
     def layer_loader(l):
         # Convert from torch.bf16 to np.fp32 for numba processing
         # Only converts one layer at a time to avoid excessive memory usage
-        gradient_layer = [gradients[l][name].float().numpy() for name in analyzer.module_names]
-        model_layer = [analyzer.get_layer_weights(l)[name].float().numpy() for name in analyzer.module_names]
+        gradient_layer = [
+            gradients[l][name].float().numpy() for name in analyzer.module_names
+        ]
+        model_layer = [
+            analyzer.get_layer_weights(l)[name].float().numpy()
+            for name in analyzer.module_names
+        ]
         return gradient_layer, model_layer
 
     return layer_loader
 
 
-def _save_results(parent_parameters_path, seed_precision, parent_precision, module_names,
-                  luts_by_bit_by_module, parent_weights, l):
+def _save_results(
+    parent_parameters_path,
+    seed_precision,
+    parent_precision,
+    module_names,
+    luts_by_bit_by_module,
+    parent_weights,
+    l,
+):
     # Note that it is important to cast the luts to fp16 before saving them,
     # as we previously cast them to fp32 to use with numba
     for i, bit in enumerate(range(seed_precision, parent_precision + 1)):
@@ -210,8 +264,10 @@ def _save_results(parent_parameters_path, seed_precision, parent_precision, modu
             lut_dict[module_names[j]] = luts_by_bit_by_module[j][i].astype(np.float16)
         torch.save(lut_dict, output_lut_file_name)
 
-    parent_weight_dict = {module_names[j]: parent_weights[j].astype(np.uint8)
-                          for j in range(len(module_names))}
+    parent_weight_dict = {
+        module_names[j]: parent_weights[j].astype(np.uint8)
+        for j in range(len(module_names))
+    }
 
     output_weights_layer_file_name = f"{parent_parameters_path}/weights/l{l}.pt"
     os.makedirs(os.path.dirname(output_weights_layer_file_name), exist_ok=True)
@@ -222,20 +278,32 @@ def _get_saver(parent_parameters_path, seed_precision, parent_precision, module_
     """Returns a function that saves the results for a given layer"""
 
     def save_results(luts_by_bit_by_module, parent_weights, l):
-        return _save_results(parent_parameters_path, seed_precision, parent_precision, module_names,
-                             luts_by_bit_by_module, parent_weights, l)
+        return _save_results(
+            parent_parameters_path,
+            seed_precision,
+            parent_precision,
+            module_names,
+            luts_by_bit_by_module,
+            parent_weights,
+            l,
+        )
 
     return save_results
 
 
-def _load_progress(parent_parameters_path, seed_precision, parent_precision, layer_count):
+def _load_progress(
+    parent_parameters_path, seed_precision, parent_precision, layer_count
+):
     # Check if the layer has already been processed
     todo_ran = []
     processed_ran = []
     for l in range(layer_count):
-        if all([os.path.exists(f"{parent_parameters_path}/lut_{bit}/l{l}.pt")
-                for bit in range(seed_precision, parent_precision + 1)]) and \
-                os.path.exists(f"{parent_parameters_path}/weights/l{l}.pt"):
+        if all(
+            [
+                os.path.exists(f"{parent_parameters_path}/lut_{bit}/l{l}.pt")
+                for bit in range(seed_precision, parent_precision + 1)
+            ]
+        ) and os.path.exists(f"{parent_parameters_path}/weights/l{l}.pt"):
             processed_ran.append(l)
         else:
             todo_ran.append(l)
@@ -243,16 +311,18 @@ def _load_progress(parent_parameters_path, seed_precision, parent_precision, lay
 
 
 def seed_and_upscale(
-        analyzer,
-        gradients,
-        output_folder,
-        seed_precision,
-        parent_precision,
-        cpu_count=None,
-        random_state=None,
-        group_count=1,
+    analyzer,
+    gradients,
+    output_folder,
+    seed_precision,
+    parent_precision,
+    cpu_count=None,
+    random_state=None,
+    group_count=1,
 ):
-    assert seed_precision <= parent_precision, "Parent precision should be equal or higher than seed precision"
+    assert (
+        seed_precision <= parent_precision
+    ), "Parent precision should be equal or higher than seed precision"
 
     if cpu_count is None:
         cpu_count = os.cpu_count()
@@ -268,14 +338,21 @@ def seed_and_upscale(
 
     logging.info(f"Using {cpu_count} cores for parallelization")
 
-    logging.info(f"Seeding & Upscaling from {seed_precision}-bit to {parent_precision}-bit")
+    logging.info(
+        f"Seeding & Upscaling from {seed_precision}-bit to {parent_precision}-bit"
+    )
 
-    layers_to_process, completed_layers = _load_progress(output_folder, seed_precision, parent_precision,
-                                                        analyzer.num_layers)
+    layers_to_process, completed_layers = _load_progress(
+        output_folder, seed_precision, parent_precision, analyzer.num_layers
+    )
 
     if completed_layers:
-        logging.info(f"The following layers will be skipped as they have already been processed:\n{completed_layers}")
-        logging.info(f"To reprocess these layers, delete the corresponding files in {output_folder}")
+        logging.info(
+            f"The following layers will be skipped as they have already been processed:\n{completed_layers}"
+        )
+        logging.info(
+            f"To reprocess these layers, delete the corresponding files in {output_folder}"
+        )
 
     if not layers_to_process:
         logging.info("All layers have already been processed. Exiting...")
@@ -284,7 +361,9 @@ def seed_and_upscale(
     logging.info(f"Quantizing layers {layers_to_process}")
 
     layer_loader = _get_layer_loader(analyzer, gradients)
-    layer_saver = _get_saver(output_folder, seed_precision, parent_precision, analyzer.module_names)
+    layer_saver = _get_saver(
+        output_folder, seed_precision, parent_precision, analyzer.module_names
+    )
 
     if pipelined_io:
         with ThreadPoolExecutor(max_workers=io_workers) as io_executor:
@@ -306,7 +385,9 @@ def seed_and_upscale(
                     random_state=random_state,
                 )
 
-                io_executor.submit(layer_saver, luts_by_bit_by_module, parent_weights, l)
+                io_executor.submit(
+                    layer_saver, luts_by_bit_by_module, parent_weights, l
+                )
             logging.info("Waiting for IO to finish...")
     else:
         for l in tqdm(layers_to_process, desc="Quantizing layers..."):
@@ -318,7 +399,7 @@ def seed_and_upscale(
                 seed_precision,
                 parent_precision,
                 group_count,
-                random_state=random_state
+                random_state=random_state,
             )
 
             layer_saver(luts_by_bit_by_module, parent_weights, l)

@@ -23,7 +23,11 @@ def _module_get_threshold_from_range(weights, trange):
 @numba.njit(cache=True)
 def _module_get_outlier_count_from_threshold(weights, threshold):
     # Assumes sorted weights, O(log n)
-    return np.searchsorted(weights, -threshold) + len(weights) - np.searchsorted(weights, threshold)
+    return (
+        np.searchsorted(weights, -threshold)
+        + len(weights)
+        - np.searchsorted(weights, threshold)
+    )
 
 
 @numba.njit(cache=True)
@@ -38,7 +42,9 @@ def _get_outlier_count_from_range(trange, sorted_flattened_weights):
     total_outliers = 0
     thresholds = np.empty(len(sorted_flattened_weights), dtype=np.float32)
     for i, module_weight in enumerate(sorted_flattened_weights):
-        num_outliers, threshold = _module_get_outlier_count_from_range(module_weight, trange)
+        num_outliers, threshold = _module_get_outlier_count_from_range(
+            module_weight, trange
+        )
         thresholds[i] = threshold
         total_outliers += num_outliers
     return total_outliers, thresholds
@@ -46,7 +52,9 @@ def _get_outlier_count_from_range(trange, sorted_flattened_weights):
 
 def _process_module(module_data):
     layer_index, module_name, module_weight = module_data
-    sorted_weights = np.sort(module_weight.flatten()).astype(np.float32)  # fp32 for numba
+    sorted_weights = np.sort(module_weight.flatten()).astype(
+        np.float32
+    )  # fp32 for numba
     total_params = module_weight.numel()
     return layer_index, module_name, sorted_weights, total_params
 
@@ -65,7 +73,13 @@ def _find_thresholds(analyzer, outlier_percent, tolerance=0.0001):
     sorted_flattened_weights = []
     total_params = 0
 
-    results = process_map(_process_module, tasks, chunksize=1, max_workers=None, desc="Preprocessing weights")
+    results = process_map(
+        _process_module,
+        tasks,
+        chunksize=1,
+        max_workers=None,
+        desc="Preprocessing weights",
+    )
 
     for layer_index, module_name, sorted_weights, params in results:
         sorted_flattened_weights.append(sorted_weights)
@@ -77,10 +91,16 @@ def _find_thresholds(analyzer, outlier_percent, tolerance=0.0001):
     thresholds = None
     logging.info(f"Begin trange search for outlier percent {outlier_percent}%")
     while low < high:
-        mid = (low + high) / 2  # Note that this is a float as we are searching for a float threshold
-        total_outliers, thresholds = _get_outlier_count_from_range(mid, sorted_flattened_weights)
+        mid = (
+            low + high
+        ) / 2  # Note that this is a float as we are searching for a float threshold
+        total_outliers, thresholds = _get_outlier_count_from_range(
+            mid, sorted_flattened_weights
+        )
         percent = total_outliers / total_params * 100
-        logging.info(f"Search range: [{low:.5f}, {high:.4f}] Threshold: {mid:.5f}, Outlier ratio: {percent:.5f}%")
+        logging.info(
+            f"Search range: [{low:.5f}, {high:.4f}] Threshold: {mid:.5f}, Outlier ratio: {percent:.5f}%"
+        )
         if abs(percent - outlier_percent) < tolerance:
             logging.info(f"Found threshold: {mid:.5f}, Outlier ratio: {percent:.5f}%")
             break
@@ -144,23 +164,31 @@ def _remove_outliers_by_sensitivity(analyzer, gradients, sensitivity_outlier_per
     return sparse_model_weights
 
 
-def remove_outliers(analyzer, gradients, sensitivity_outlier_percent, threshold_outlier_percent):
+def remove_outliers(
+    analyzer, gradients, sensitivity_outlier_percent, threshold_outlier_percent
+):
     # This removes the sensitivity outliers from the weights stored in the analyzer, and returns the removed weights
-    sparse_model_weights_1 = _remove_outliers_by_sensitivity(analyzer, gradients, sensitivity_outlier_percent)
+    sparse_model_weights_1 = _remove_outliers_by_sensitivity(
+        analyzer, gradients, sensitivity_outlier_percent
+    )
 
     # Find the thresholds to achieve the desired outlier percentage
     thresholds_by_module = _find_thresholds(analyzer, threshold_outlier_percent)
 
     # This removes the threshold outliers from the weights stored in the analyzer, and returns the removed weights
-    sparse_model_weights_2 = _remove_outliers_by_threshold(analyzer, thresholds_by_module)
+    sparse_model_weights_2 = _remove_outliers_by_threshold(
+        analyzer, thresholds_by_module
+    )
 
     # Add the two sets of sparse weights
     sparse_model_weights = []
     for l in range(analyzer.num_layers):
         sparse_model_weights_by_layer = {}
         for module_name in analyzer.module_names:
-            sparse_model_weights_by_layer[module_name] = (sparse_model_weights_1[l][module_name] +
-                                                          sparse_model_weights_2[l][module_name]).to_sparse()
+            sparse_model_weights_by_layer[module_name] = (
+                sparse_model_weights_1[l][module_name]
+                + sparse_model_weights_2[l][module_name]
+            ).to_sparse()
         sparse_model_weights.append(sparse_model_weights_by_layer)
 
     return sparse_model_weights

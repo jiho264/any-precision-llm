@@ -8,24 +8,28 @@ from .datautils import get_tokens
 
 
 def get_gradients(
-        analyzer,
-        dataset=DEFAULT_DATASET,
-        seq_len=DEFAULT_SEQ_LEN,
-        num_examples=DEFAULT_NUM_EXAMPLES,
-        save_path=None,
-        random_state=None,
+    analyzer,
+    dataset=DEFAULT_DATASET,
+    seq_len=DEFAULT_SEQ_LEN,
+    num_examples=DEFAULT_NUM_EXAMPLES,
+    save_path=None,
+    random_state=None,
 ):
     if save_path is not None and os.path.isfile(save_path):
         logging.info(f"Gradients already calculated and saved at {save_path}.")
         logging.info(f"Loading gradients...")
         return torch.load(save_path)
-    logging.info(f"Calculating gradients on dataset {dataset} with sequence length {seq_len} and "
-                 f"{num_examples} examples...")
+    logging.info(
+        f"Calculating gradients on dataset {dataset} with sequence length {seq_len} and "
+        f"{num_examples} examples..."
+    )
 
     model = analyzer.model
     tokenizer = analyzer.tokenizer
 
-    input_tokens = get_tokens(dataset, 'train', tokenizer, seq_len, num_examples, seed=random_state)
+    input_tokens = get_tokens(
+        dataset, "train", tokenizer, seq_len, num_examples, seed=random_state
+    )
 
     if analyzer is None:
         analyzer = get_analyzer(model)
@@ -33,7 +37,7 @@ def get_gradients(
     model = model.bfloat16()
     model.eval()
 
-    if model.device.type != 'cuda':
+    if model.device.type != "cuda":
         model.cuda()
 
     layers = analyzer.get_layers()
@@ -77,11 +81,13 @@ def get_gradients(
     if save_path is not None:
         logging.info(f"Saving gradients to {save_path}...")
         # add file extension if not present
-        if not save_path.endswith('.pt'):
-            save_path = save_path + '.pt'
+        if not save_path.endswith(".pt"):
+            save_path = save_path + ".pt"
         # check if the file already exists
         if os.path.exists(save_path):
-            input(f"[WARNING] File {save_path} already exists. Press enter to overwrite or Ctrl+C to cancel.")
+            input(
+                f"[WARNING] File {save_path} already exists. Press enter to overwrite or Ctrl+C to cancel."
+            )
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         torch.save(gradients, save_path)
 

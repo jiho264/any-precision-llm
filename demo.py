@@ -6,18 +6,29 @@ import time
 from argparse import ArgumentParser
 
 # Logging with time sans date, level name, and message
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(levelname)s] %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s | %(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 parser = ArgumentParser()
-parser.add_argument('-p', '--precisions', nargs='+', type=int, default=None,
-                    help="The precisions to benchmark. If not specified, all available precisions will be benchmarked."
-                    )
+parser.add_argument(
+    "-p",
+    "--precisions",
+    nargs="+",
+    type=int,
+    default=None,
+    help="The precisions to benchmark. If not specified, all available precisions will be benchmarked.",
+)
 
 args = parser.parse_args()
 
-if __name__ == '__main__':
-    model_path = './cache/packed/anyprec-(Llama-2-7b-chat-hf)-w8_orig3-gc1-c4_s100_blk512'
-    original_model_path = 'meta-llama/Llama-2-7b-chat-hf'
+if __name__ == "__main__":
+    model_path = (
+        "./cache/packed/anyprec-(Llama-2-7b-chat-hf)-w8_orig3-gc1-c4_s100_blk512"
+    )
+    original_model_path = "meta-llama/Llama-2-7b-chat-hf"
 
     # Configure the precisions to benchmark
     do_fp16 = True
@@ -57,7 +68,9 @@ if __name__ == '__main__':
     results = {}
 
     for precision in model.precisions:
-        print(f"=============== generation with {precision}-bit precision ===============")
+        print(
+            f"=============== generation with {precision}-bit precision ==============="
+        )
         torch.cuda.synchronize()
         start_time = time.time()
         output = model.generate(
@@ -77,7 +90,9 @@ if __name__ == '__main__':
 
         results[precision] = (tokens_per_second, ms_per_token)
 
-        print(f"\n( Generation speed: {tokens_per_second:.1f} tok/s | Latency: {ms_per_token:.2f} ms/tok )\n")
+        print(
+            f"\n( Generation speed: {tokens_per_second:.1f} tok/s | Latency: {ms_per_token:.2f} ms/tok )\n"
+        )
 
     # Clear memory
     del model
@@ -86,7 +101,13 @@ if __name__ == '__main__':
     if do_fp16:
         # Benchmark the original model
         print(f"=============== generation with fp16 precision ===============")
-        model = AutoModelForCausalLM.from_pretrained(original_model_path, torch_dtype=torch.float16).eval().cuda()
+        model = (
+            AutoModelForCausalLM.from_pretrained(
+                original_model_path, torch_dtype=torch.float16
+            )
+            .eval()
+            .cuda()
+        )
         torch.cuda.synchronize()
         start_time = time.time()
         output = model.generate(
@@ -105,10 +126,14 @@ if __name__ == '__main__':
 
         results[16] = (tokens_per_second, ms_per_token)
 
-        print(f"\n( Generation speed: {tokens_per_second:.1f} tok/s | Latency: {ms_per_token:.2f} ms/tok )\n")
+        print(
+            f"\n( Generation speed: {tokens_per_second:.1f} tok/s | Latency: {ms_per_token:.2f} ms/tok )\n"
+        )
 
     print("=============== Summary ===============")
     print(f"\nModel: {model_path}\n")
 
     for precision, (tokens_per_second, ms_per_token) in results.items():
-        print(f"{precision}-bit: {tokens_per_second:.1f} tok/s | {ms_per_token:.2f} ms/tok")
+        print(
+            f"{precision}-bit: {tokens_per_second:.1f} tok/s | {ms_per_token:.2f} ms/tok"
+        )

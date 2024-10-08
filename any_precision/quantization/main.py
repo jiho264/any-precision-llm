@@ -1,4 +1,3 @@
-
 import os
 import os.path
 import shutil
@@ -16,44 +15,58 @@ import torch
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Logging with time sans date, level name, and message
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(levelname)s] %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s | %(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 
 def any_precision_quantize(
-        model,
-        seed_precision=DEFAULT_SEED_PRECISION,
-        parent_precision=DEFAULT_PARENT_PRECISION,
-        mode='pack',
-        yaml_path=None, cache_dir=DEFAULT_CACHE_DIR,
-        dataset=DEFAULT_DATASET, seq_len=DEFAULT_SEQ_LEN, num_examples=DEFAULT_NUM_EXAMPLES,
-        cpu_count=os.cpu_count(),
-        overwrite_gradients=False,
-        overwrite_quantize=False,
-        overwrite_pack=False,
-        random_state=None,
-        group_count=1,
-        dns=False,
-        sensitivity_outlier_percent=0.05,
-        threshold_outlier_percent=0.40
+    model,
+    seed_precision=DEFAULT_SEED_PRECISION,
+    parent_precision=DEFAULT_PARENT_PRECISION,
+    mode="pack",
+    yaml_path=None,
+    cache_dir=DEFAULT_CACHE_DIR,
+    dataset=DEFAULT_DATASET,
+    seq_len=DEFAULT_SEQ_LEN,
+    num_examples=DEFAULT_NUM_EXAMPLES,
+    cpu_count=os.cpu_count(),
+    overwrite_gradients=False,
+    overwrite_quantize=False,
+    overwrite_pack=False,
+    random_state=None,
+    group_count=1,
+    dns=False,
+    sensitivity_outlier_percent=0.05,
+    threshold_outlier_percent=0.40,
 ):
-    assert mode in ['gradients', 'quantize', 'pack'], \
-        "mode must be one of 'gradients', 'quantize', or 'pack'. Use 'pack' to run the entire pipeline."
+    assert mode in [
+        "gradients",
+        "quantize",
+        "pack",
+    ], "mode must be one of 'gradients', 'quantize', or 'pack'. Use 'pack' to run the entire pipeline."
 
     if overwrite_gradients:
         if not overwrite_quantize:
-            logging.warning("Parent model needs to be recalculated if gradients are recalculated. "
-                            "Setting overwrite_quantize to True.")
+            logging.warning(
+                "Parent model needs to be recalculated if gradients are recalculated. "
+                "Setting overwrite_quantize to True."
+            )
             overwrite_quantize = True
 
     if overwrite_quantize:
         if not overwrite_pack:
-            logging.warning("Packed model needs to be recalculated if parent model is recalculated. "
-                            "Setting overwrite_pack to True.")
+            logging.warning(
+                "Packed model needs to be recalculated if parent model is recalculated. "
+                "Setting overwrite_pack to True."
+            )
             overwrite_pack = True
 
-    if mode == 'gradients':
+    if mode == "gradients":
         logging.info("Running: [Gradients]")
-    elif mode == 'quantize':
+    elif mode == "quantize":
         logging.info("Running: [Gradients -> Quantize]")
     else:
         logging.info("Running: [Gradients -> Quantize -> Pack]")
@@ -61,8 +74,10 @@ def any_precision_quantize(
     model_string = model if isinstance(model, str) else model.name_or_path
     model_name = model_string.split("/")[-1]
 
-    logging.info(f"Running Any-Precision Quantization on {model_name} with seed precision {seed_precision} and "
-                 f"parent precision {parent_precision} using {dataset} for gradient calculation")
+    logging.info(
+        f"Running Any-Precision Quantization on {model_name} with seed precision {seed_precision} and "
+        f"parent precision {parent_precision} using {dataset} for gradient calculation"
+    )
 
     # ------------------- Load model -------------------
 
@@ -70,16 +85,22 @@ def any_precision_quantize(
 
     # ------------------- Set cache paths -------------------
 
-    gradients_cache_path = (f"{cache_dir}/gradients/"
-                            f"({model_name})-{dataset}_s{num_examples}_blk{seq_len}.pt")
+    gradients_cache_path = (
+        f"{cache_dir}/gradients/"
+        f"({model_name})-{dataset}_s{num_examples}_blk{seq_len}.pt"
+    )
 
-    quantized_cache_path = (f"{cache_dir}/quantized/"
-                          f"{'dns-' if dns else ''}({model_name})-w{parent_precision}_orig{seed_precision}"
-                          f"-gc{group_count}-{dataset}_s{num_examples}_blk{seq_len}")
+    quantized_cache_path = (
+        f"{cache_dir}/quantized/"
+        f"{'dns-' if dns else ''}({model_name})-w{parent_precision}_orig{seed_precision}"
+        f"-gc{group_count}-{dataset}_s{num_examples}_blk{seq_len}"
+    )
 
-    model_output_path = (f"{cache_dir}/packed/"
-                         f"anyprec-({model_name})-w{parent_precision}_orig{seed_precision}"
-                         f"-gc{group_count}-{dataset}_s{num_examples}_blk{seq_len}")
+    model_output_path = (
+        f"{cache_dir}/packed/"
+        f"anyprec-({model_name})-w{parent_precision}_orig{seed_precision}"
+        f"-gc{group_count}-{dataset}_s{num_examples}_blk{seq_len}"
+    )
 
     # ------------------- Gradients -------------------
 
@@ -89,7 +110,9 @@ def any_precision_quantize(
     # Calculate or load gradients
     if overwrite_gradients and os.path.exists(gradients_cache_path):
         # if the user wants to recalculate the gradients, delete the cached gradients
-        logging.info(f"Detected cached gradients at {gradients_cache_path}. Will delete and recalculate.")
+        logging.info(
+            f"Detected cached gradients at {gradients_cache_path}. Will delete and recalculate."
+        )
         os.remove(gradients_cache_path)
 
     # this will load and return the gradients if they exist, or calculate them if they don't
@@ -103,7 +126,7 @@ def any_precision_quantize(
     )
     logging.info("Gradient calculation complete.")
 
-    if mode == 'gradients':
+    if mode == "gradients":
         return
 
     # ------------------- Dense & Sparse -------------------
@@ -129,11 +152,15 @@ def any_precision_quantize(
     logging.info("------------------- Quantize: Seed + Upscale -------------------")
 
     # Calculate or load parent
-    logging.info(f"Beginning {seed_precision}~{parent_precision}-bit Any-Precision Quantization...")
+    logging.info(
+        f"Beginning {seed_precision}~{parent_precision}-bit Any-Precision Quantization..."
+    )
     # Note that this saves the seed model to the cache path and must be loaded for the upscale step
     if overwrite_quantize and os.path.exists(quantized_cache_path):
         # if the user wants to recalculate the seed, delete the cached seed
-        logging.info(f"Detected cached parent at {quantized_cache_path}. Will delete and recalculate.")
+        logging.info(
+            f"Detected cached parent at {quantized_cache_path}. Will delete and recalculate."
+        )
         shutil.rmtree(quantized_cache_path)
 
     # this skips over existing layers in the cache, and doesn't overwrite them
@@ -148,7 +175,7 @@ def any_precision_quantize(
         group_count=group_count,
     )
 
-    if mode == 'quantize':
+    if mode == "quantize":
         return
 
     del model_gradients  # free up memory
@@ -160,14 +187,22 @@ def any_precision_quantize(
     logging.info("------------------- Pack -------------------")
 
     # check for non-empty directory
-    if os.path.exists(model_output_path) and os.path.isdir(model_output_path) and os.listdir(model_output_path):
+    if (
+        os.path.exists(model_output_path)
+        and os.path.isdir(model_output_path)
+        and os.listdir(model_output_path)
+    ):
         if overwrite_pack:
-            logging.info(f"Model output path {model_output_path} already exists and is not empty. Will delete and "
-                         f"re-pack.")
+            logging.info(
+                f"Model output path {model_output_path} already exists and is not empty. Will delete and "
+                f"re-pack."
+            )
             shutil.rmtree(model_output_path)
         else:
             # if the user doesn't want to overwrite the pack, but the directory is not empty, skip packing
-            logging.info(f"Model output path {model_output_path} already exists and is not empty. Will skip packing.")
+            logging.info(
+                f"Model output path {model_output_path} already exists and is not empty. Will skip packing."
+            )
             return
 
     pack(

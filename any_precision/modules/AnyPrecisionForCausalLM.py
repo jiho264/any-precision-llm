@@ -18,7 +18,7 @@ from any_precision.analyzer.analyzer import get_analyzer
 
 
 def replace_module_by_name(layer, module_name, new_module):
-    levels = module_name.split('.')
+    levels = module_name.split(".")
     module = layer
     for level in levels[:-1]:
         module = getattr(module, level) if not level.isdigit() else module[int(level)]
@@ -27,26 +27,31 @@ def replace_module_by_name(layer, module_name, new_module):
 
 class AnyPrecisionForCausalLM(nn.Module):
     def __init__(
-            self,
-            model_path,
-            config,
-            precisions=None,
-            torch_dtype=torch.float16,
-            fuse_layers=False,
-            trust_remote_code=True,
+        self,
+        model_path,
+        config,
+        precisions=None,
+        torch_dtype=torch.float16,
+        fuse_layers=False,
+        trust_remote_code=True,
     ):
         super().__init__()
 
         self.config = config
 
-        self.supported_bits = list(range(self.config.anyprec['seed_precision'],
-                                         self.config.anyprec['parent_precision'] + 1))
+        self.supported_bits = list(
+            range(
+                self.config.anyprec["seed_precision"],
+                self.config.anyprec["parent_precision"] + 1,
+            )
+        )
         if precisions is None:
             self.precisions = self.supported_bits
         else:
             assert len(precisions) == len(set(precisions)), "Precisions must be unique"
-            assert all(bit in self.supported_bits for bit in precisions), \
-                f"Supported bits {precisions} must be a subset of model supported bits {self.supported_bits}"
+            assert all(
+                bit in self.supported_bits for bit in precisions
+            ), f"Supported bits {precisions} must be a subset of model supported bits {self.supported_bits}"
             self.precisions = precisions
 
         self.precision = max(self.precisions)
@@ -67,7 +72,7 @@ class AnyPrecisionForCausalLM(nn.Module):
 
         self.tie_weights()
 
-        device_map = {key: 'cpu' for key in self.model.state_dict().keys()}
+        device_map = {key: "cpu" for key in self.model.state_dict().keys()}
 
         # loads the weights into modules and distributes
         # across available devices automatically
@@ -87,8 +92,8 @@ class AnyPrecisionForCausalLM(nn.Module):
 
     def forward(self, *args, **kwargs):
         prev_precision = self.precision
-        if 'precision' in kwargs:
-            precision = kwargs.pop('precision')
+        if "precision" in kwargs:
+            precision = kwargs.pop("precision")
             self.set_precision(precision)
 
         results = self.model.forward(*args, **kwargs)
@@ -97,9 +102,9 @@ class AnyPrecisionForCausalLM(nn.Module):
         return results
 
     def generate(self, *args, **kwargs):
-        if 'precision' in kwargs:
+        if "precision" in kwargs:
             prev_precision = self.precision
-            precision = kwargs.pop('precision')
+            precision = kwargs.pop("precision")
             self.set_precision(precision)
         else:
             prev_precision = self.precision
@@ -112,19 +117,21 @@ class AnyPrecisionForCausalLM(nn.Module):
 
     @staticmethod
     def _load_config(
-            model_path,
-            trust_remote_code=True,
+        model_path,
+        trust_remote_code=True,
     ):
-        config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+        config = AutoConfig.from_pretrained(
+            model_path, trust_remote_code=trust_remote_code
+        )
         return config
 
     @classmethod
     def from_quantized(
-            cls,
-            quant_model_path,
-            trust_remote_code=True,
-            fuse_layers=False,
-            precisions=None
+        cls,
+        quant_model_path,
+        trust_remote_code=True,
+        fuse_layers=False,
+        precisions=None,
     ):
         config = cls._load_config(quant_model_path, trust_remote_code)
 
@@ -149,7 +156,8 @@ class AnyPrecisionForCausalLM(nn.Module):
             # Replace nn.Linear with AnyPrecisionLinear
             for name, module in named_linears.items():
                 wqlinear = AnyPrecisionLinear(
-                    module.in_features, module.out_features,
+                    module.in_features,
+                    module.out_features,
                     self.supported_bits,
                     bias=module.bias is not None,
                     precisions=self.precisions,
@@ -179,12 +187,12 @@ class AnyPrecisionForCausalLM(nn.Module):
 
     def get_model_layers(self):
         module = self.model
-        for attrib_name in self.config.anyprec['arch_config']['model_name'].split('.'):
+        for attrib_name in self.config.anyprec["arch_config"]["model_name"].split("."):
             module = getattr(module, attrib_name)
-        return getattr(module, self.config.anyprec['arch_config']['layers_name'])
+        return getattr(module, self.config.anyprec["arch_config"]["layers_name"])
 
     def fuse_layers(self):
-        if 'fuse_target_layers' not in self.model_config:
+        if "fuse_target_layers" not in self.model_config:
             raise NotImplementedError("This model does not support layer fusion")
         # TODO implement layer fusion
         pass

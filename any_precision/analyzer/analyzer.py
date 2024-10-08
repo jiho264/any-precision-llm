@@ -11,27 +11,37 @@ def get_analyzer(model, yaml_path=None, include_tokenizer=False):
     model = load_model(model)
 
     # Anyprecision quantized model
-    if hasattr(model.config, 'anyprec'):
-        return ModelAnalyzer.from_arch_config(model, model.config.anyprec['arch_config'])
+    if hasattr(model.config, "anyprec"):
+        return ModelAnalyzer.from_arch_config(
+            model, model.config.anyprec["arch_config"]
+        )
 
     # Unspecified model quantization config
     if yaml_path is None:
         dirpath = os.path.dirname(os.path.realpath(__file__))
-        yaml_dir = os.path.join(dirpath, f'./architectures/')
+        yaml_dir = os.path.join(dirpath, f"./architectures/")
         assert len(model.config.architectures) == 1, "Model has multiple architectures"
         # Check if there is a yaml file for the model architecture
         for file in os.listdir(yaml_dir):
             if file.endswith(".yaml"):
                 with open(os.path.join(yaml_dir, file)) as f:
                     yaml_contents = yaml.safe_load(f)
-                if model.config.architectures[0] == yaml_contents['architecture']:
-                    return ModelAnalyzer.from_arch_config(model, yaml_contents['arch_config'], include_tokenizer)
+                if model.config.architectures[0] == yaml_contents["architecture"]:
+                    return ModelAnalyzer.from_arch_config(
+                        model, yaml_contents["arch_config"], include_tokenizer
+                    )
         else:
             # If no yaml file is found, use AutoQuantConfig
-            logging.warning((f"Attempting to use AutoArchConfig for architecture:"
-                             f" {model.config.architectures[0]}"))
+            logging.warning(
+                (
+                    f"Attempting to use AutoArchConfig for architecture:"
+                    f" {model.config.architectures[0]}"
+                )
+            )
             logging.warning("This may not work as expected!")
-            return ModelAnalyzer.from_autoconfig(model, include_tokenizer=include_tokenizer)
+            return ModelAnalyzer.from_autoconfig(
+                model, include_tokenizer=include_tokenizer
+            )
 
     # Specified model quantization config
     else:
@@ -39,7 +49,9 @@ def get_analyzer(model, yaml_path=None, include_tokenizer=False):
             raise FileNotFoundError(f"Specified yaml file does not exist: {yaml_path}")
         with open(yaml_path) as f:
             yaml_contents = yaml.safe_load(f)
-        return ModelAnalyzer.from_arch_config(model, yaml_contents['arch_config'], include_tokenizer=include_tokenizer)
+        return ModelAnalyzer.from_arch_config(
+            model, yaml_contents["arch_config"], include_tokenizer=include_tokenizer
+        )
 
 
 class ModelAnalyzer:
@@ -49,7 +61,14 @@ class ModelAnalyzer:
     constructor. Alternatively, you can instantiate from a yaml file using the from_yaml method.
     """
 
-    def __init__(self, model: AutoModelForCausalLM, module_names, model_name, layers_name, include_tokenizer=False):
+    def __init__(
+        self,
+        model: AutoModelForCausalLM,
+        module_names,
+        model_name,
+        layers_name,
+        include_tokenizer=False,
+    ):
         self.model = model
         self.module_names = module_names
         self.model_name = model_name
@@ -64,7 +83,9 @@ class ModelAnalyzer:
         self._model_weights = {}
 
     @classmethod
-    def from_arch_config(cls, model: AutoModelForCausalLM, quant_config: dict, include_tokenizer=False):
+    def from_arch_config(
+        cls, model: AutoModelForCausalLM, quant_config: dict, include_tokenizer=False
+    ):
         return cls(model, **quant_config, include_tokenizer=include_tokenizer)
 
     def get_arch_config(self):
@@ -86,7 +107,7 @@ class ModelAnalyzer:
         if self.dropped_original_weights:
             raise ValueError("Original weights have been dropped")
         module = self.get_model()
-        for attrib_name in self.layers_name.split('.'):
+        for attrib_name in self.layers_name.split("."):
             module = getattr(module, attrib_name)
         return module
 
@@ -95,7 +116,7 @@ class ModelAnalyzer:
         modules = {}
         for module_name in self.module_names:
             module = layer
-            for attrib_name in module_name.split('.'):
+            for attrib_name in module_name.split("."):
                 module = getattr(module, attrib_name)
             modules[module_name] = module
         return modules
@@ -119,13 +140,15 @@ class ModelAnalyzer:
         if self.dropped_original_weights:
             raise ValueError("Original weights have been dropped")
         module = self.model
-        for attrib_name in self.model_name.split('.'):
+        for attrib_name in self.model_name.split("."):
             module = getattr(module, attrib_name)
         return module
 
     def drop_original_weights(self):
-        weight_key_prefixes = [f'{self.model_name}.{self.layers_name}.{i}' for i in range(self.num_layers)]
-        weight_key_postfix = 'weight'
+        weight_key_prefixes = [
+            f"{self.model_name}.{self.layers_name}.{i}" for i in range(self.num_layers)
+        ]
+        weight_key_postfix = "weight"
         for prefix in weight_key_prefixes:
             for module_name in self.module_names:
                 key = f"{prefix}.{module_name}.{weight_key_postfix}"
